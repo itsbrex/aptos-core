@@ -1438,6 +1438,7 @@ dependencies = [
  "aptos-moving-average",
  "aptos-protos",
  "aptos-runtimes",
+ "clap 3.2.23",
  "cloud-storage",
  "futures",
  "prost",
@@ -1460,6 +1461,7 @@ dependencies = [
  "aptos-logger",
  "aptos-moving-average",
  "aptos-runtimes",
+ "clap 3.2.23",
  "cloud-storage",
  "futures-util",
  "redis",
@@ -1528,11 +1530,20 @@ name = "aptos-indexer-grpc-utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aptos-logger",
+ "aptos-protos",
  "cloud-storage",
+ "futures",
+ "futures-core",
  "futures-util",
+ "itertools",
  "redis",
+ "redis-test",
  "serde 1.0.149",
  "serde_json",
+ "serde_yaml 0.8.26",
+ "tokio",
+ "tonic",
 ]
 
 [[package]]
@@ -8863,6 +8874,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e9ceb100979db7292de8a3d4ecdde659cccc85133303ea0741e1618a5bd73df"
 dependencies = [
+ "futures",
  "redis",
 ]
 
