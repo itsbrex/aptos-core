@@ -7,15 +7,19 @@ use crate::{
 };
 use aptos_types::{
     on_chain_config::StorageGasSchedule,
-    state_store::state_key::StateKey,
+    state_store::{state_key::StateKey, state_value::StateValueMetadata},
     transaction::{ChangeSet, CheckChangeSet},
-    write_set::WriteOp,
+    write_set::{WriteOp, WriteSetMut},
 };
+use itertools::Itertools;
+use move_binary_format::errors::VMResult;
 use move_core_types::{
+    account_address::AccountAddress,
     gas_algebra::{InternalGas, InternalGasPerArg, InternalGasPerByte, NumArgs, NumBytes},
+    value::{MoveStruct, MoveValue},
     vm_status::{StatusCode, VMStatus},
 };
-use std::fmt::Debug;
+use std::{cmp::Ordering, collections::BTreeMap, fmt::Debug};
 
 #[derive(Clone, Debug)]
 pub struct StoragePricingV1 {
@@ -94,6 +98,55 @@ impl StoragePricingV1 {
             + self.write_data_per_byte_in_val * num_bytes_val;
 
         cost_ops + cost_new_items + cost_bytes
+    }
+}
+
+pub struct StorageDepositEntry {
+    pub account: AccountAddress,
+    pub amount: u64,
+}
+
+pub struct StorageDepositCharges {
+    pub slot_charges: Vec<StorageDepositEntry>,
+    pub slot_refunds: Vec<StorageDepositEntry>,
+    pub excess_bytes_penalties: Vec<StorageDepositEntry>,
+}
+
+impl StorageDepositCharges {
+    pub fn empty() -> Self {
+        Self {
+            slot_charges: Vec::new(),
+            slot_refunds: Vec::new(),
+            excess_bytes_penalties: Vec::new(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.slot_charges.is_empty()
+            && self.slot_refunds.is_empty()
+            && self.excess_bytes_penalties.is_empty()
+    }
+
+    pub fn into_move_args(self) -> Vec<MoveValue> {
+        vec![
+            Self::convert_move_vector(self.slot_charges),
+            Self::convert_move_vector(self.slot_refunds),
+            Self::convert_move_vector(self.excess_bytes_penalties),
+        ]
+    }
+
+    fn convert_move_vector(entries: Vec<StorageDepositEntry>) -> MoveValue {
+        MoveValue::Vector(
+            entries
+                .into_iter()
+                .map(|StorageDepositEntry { account, amount }| {
+                    MoveValue::Struct(MoveStruct::Runtime(vec![
+                        MoveValue::Address(account),
+                        MoveValue::U64(amount),
+                    ]))
+                })
+                .collect(),
+        )
     }
 }
 
@@ -219,6 +272,114 @@ impl StoragePricingV2 {
             + num_bytes_create * self.per_byte_create
             + num_bytes_write * self.per_byte_write
     }
+
+    fn storage_deposit_enabled(&self) -> bool {
+        self.feature_version >= 7
+    }
+
+    fn calculate_refund(&self, metadata: &StateValueMetadata, now: u64) -> u64 {
+        let created = metadata.creation_time_usecs();
+        assert!(now > created);
+
+        let elapsed = now - created;
+        let refund_degrade_period: u64 = self.refund_degrade_period.into();
+        let since_degrade_start = if elapsed <= self.refund_degrade_start.into() {
+            0
+        } else if elapsed >= refund_degrade_period {
+            refund_degrade_period
+        } else {
+            elapsed
+        };
+
+        const HUNDRED_PCT: u64 = 10000;
+        assert!(u64::MAX / HUNDRED_PCT > refund_degrade_period);
+
+        let refund_ratio_range: u64 =
+            u64::from(self.max_slot_refund_ratio) - u64::from(self.min_slot_refund_ratio);
+        let refund_ratio: u64 = refund_ratio_range * (refund_degrade_period - since_degrade_start)
+            / refund_degrade_period;
+
+        assert!(u64::MAX / HUNDRED_PCT > metadata.deposit());
+        metadata.deposit() * refund_ratio / HUNDRED_PCT
+    }
+
+    pub fn apply_storage_deposit_charges(
+        &self,
+        write_set: &mut WriteSetMut,
+        txn_sender: AccountAddress,
+        timestamp_us: u64,
+    ) -> VMResult<StorageDepositCharges> {
+        use WriteOp::*;
+
+        if !self.storage_deposit_enabled() {
+            return Ok(StorageDepositCharges::empty());
+        }
+
+        let per_slot_deposit: u64 = self.per_slot_deposit.into();
+
+        let mut slot_deposit = BTreeMap::<AccountAddress, u64>::new();
+        let mut slot_refund = BTreeMap::<AccountAddress, u64>::new();
+        let mut excess_bytes: u64 = 0;
+
+        for (state_key, write_op) in write_set.as_inner_mut().iter_mut() {
+            excess_bytes += write_op
+                .bytes()
+                .map(|bytes| self.write_op_size(state_key, bytes).into())
+                .unwrap_or(0);
+
+            match write_op {
+                Deletion | Creation(_) | Modification(_) | ModificationWithMetadata { .. } => {},
+                CreationWithMetadata { metadata, .. } => {
+                    metadata.set_deposit(self.per_slot_deposit.into());
+                    *slot_deposit.entry(metadata.payer()).or_default() += per_slot_deposit;
+                },
+                DeletionWithMetadata { metadata, .. } => {
+                    *slot_refund.entry(metadata.payer()).or_default() +=
+                        self.calculate_refund(metadata, timestamp_us);
+                },
+            }
+        }
+
+        let mut slot_charges = Vec::new();
+        let mut slot_refunds = Vec::new();
+
+        let deposit_iter = slot_deposit.into_iter();
+        let refund_iter = slot_refund.into_iter();
+        use itertools::EitherOrBoth::*;
+        deposit_iter
+            .merge_join_by(refund_iter, |(l, _), (r, _)| l.cmp(r))
+            .for_each(|res| match res {
+                Both((account, deposit), (_, refund)) => match deposit.cmp(&refund) {
+                    Ordering::Greater => slot_charges.push(StorageDepositEntry {
+                        account,
+                        amount: deposit - refund,
+                    }),
+                    Ordering::Less => slot_refunds.push(StorageDepositEntry {
+                        account,
+                        amount: refund - deposit,
+                    }),
+                    Ordering::Equal => {},
+                },
+                Left((account, amount)) => {
+                    slot_charges.push(StorageDepositEntry { account, amount })
+                },
+                Right((account, amount)) => {
+                    slot_refunds.push(StorageDepositEntry { account, amount })
+                },
+            });
+        let per_excess_byte_penalty: u64 = self.per_excess_byte_penalty.into();
+        assert!(u64::MAX / per_excess_byte_penalty > excess_bytes);
+        let excess_bytes_penalties = vec![StorageDepositEntry {
+            account: txn_sender,
+            amount: excess_bytes * per_excess_byte_penalty,
+        }];
+
+        Ok(StorageDepositCharges {
+            slot_charges,
+            slot_refunds,
+            excess_bytes_penalties,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -246,6 +407,27 @@ impl StoragePricing {
         match self {
             V1(v1) => v1.calculate_write_set_gas(&mut ops.into_iter()),
             V2(v2) => v2.calculate_write_set_gas(&mut ops.into_iter()),
+        }
+    }
+
+    pub fn apply_storage_deposit_charges(
+        &self,
+        write_set: &mut WriteSetMut,
+        txn_sender: AccountAddress,
+        timestamp_us: u64,
+    ) -> VMResult<StorageDepositCharges> {
+        use StoragePricing::*;
+
+        match self {
+            V1(_v1) => Ok(StorageDepositCharges::empty()),
+            V2(v2) => v2.apply_storage_deposit_charges(write_set, txn_sender, timestamp_us),
+        }
+    }
+
+    pub fn free_write_bytes_quota(&self) -> NumBytes {
+        match self {
+            StoragePricing::V1(_) => max_bytes(),
+            StoragePricing::V2(v2) => v2.free_write_bytes_quota,
         }
     }
 }
