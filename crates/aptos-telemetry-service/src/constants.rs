@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 /// The maximum content length to accept in the http body.

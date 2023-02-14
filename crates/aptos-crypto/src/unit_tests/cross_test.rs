@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 // This is necessary for the derive macros which rely on being used in a

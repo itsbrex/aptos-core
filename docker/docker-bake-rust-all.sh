@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) Aptos
+# Copyright © Aptos Labs
 # SPDX-License-Identifier: Apache-2.0
 
 # This script docker bake to build all the rust-based docker images

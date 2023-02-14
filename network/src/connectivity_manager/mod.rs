@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 //! The ConnectivityManager actor is responsible for ensuring that we are

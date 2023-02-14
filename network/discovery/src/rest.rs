@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{validator_set::extract_validator_set_updates, DiscoveryError};

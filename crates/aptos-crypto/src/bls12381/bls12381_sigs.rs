@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 //! This module provides APIs for aggregating and verifying Boneh-Lynn-Shacham (BLS) aggregate

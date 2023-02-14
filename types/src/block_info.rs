@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{epoch_state::EpochState, on_chain_config::ValidatorSet, transaction::Version};

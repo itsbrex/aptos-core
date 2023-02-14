@@ -1,4 +1,4 @@
-// Copyright (c) Aptos
+// Copyright © Aptos Labs
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{serde_helper::vec_bytes, transaction::transaction_argument::TransactionArgument};
