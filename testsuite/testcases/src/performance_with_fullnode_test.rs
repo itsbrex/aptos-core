@@ -12,12 +12,6 @@ impl Test for PerformanceBenchmarkWithFN {
     }
 }
 
-impl NetworkLoadTest for PerformanceBenchmarkWithFN {
-    fn setup(&self, _ctx: &mut NetworkContext) -> Result<LoadDestination> {
-        Ok(LoadDestination::AllFullnodes)
-    }
-}
-
 impl NetworkTest for PerformanceBenchmarkWithFN {
     fn run<'t>(&self, ctx: &mut NetworkContext<'t>) -> Result<()> {
         <dyn NetworkLoadTest>::run(self, ctx)

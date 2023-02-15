@@ -20,10 +20,6 @@ impl Test for ValidatorRebootStressTest {
 }
 
 impl NetworkLoadTest for ValidatorRebootStressTest {
-    fn setup(&self, _ctx: &mut NetworkContext) -> Result<LoadDestination> {
-        Ok(LoadDestination::AllFullnodes)
-    }
-
     fn test(&self, swarm: &mut dyn Swarm, duration: Duration) -> Result<()> {
         let start = Instant::now();
         let runtime = Runtime::new().unwrap();

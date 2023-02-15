@@ -15,12 +15,6 @@ impl Test for TwinValidatorTest {
     }
 }
 
-impl NetworkLoadTest for TwinValidatorTest {
-    fn setup(&self, _ctx: &mut NetworkContext) -> anyhow::Result<LoadDestination> {
-        Ok(LoadDestination::AllFullnodes)
-    }
-}
-
 impl NetworkTest for TwinValidatorTest {
     fn run<'t>(&self, ctx: &mut NetworkContext<'t>) -> anyhow::Result<()> {
         let runtime = Runtime::new().unwrap();

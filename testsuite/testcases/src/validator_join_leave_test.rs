@@ -24,8 +24,8 @@ impl Test for ValidatorJoinLeaveTest {
 }
 
 impl NetworkLoadTest for ValidatorJoinLeaveTest {
-    fn setup(&self, _ctx: &mut NetworkContext) -> Result<LoadDestination> {
-        Ok(LoadDestination::AllValidators)
+    fn setup(&self, ctx: &mut NetworkContext) -> Result<LoadDestination> {
+        Ok(LoadDestination::AllFullnodesIfAnyElseAllValidators)
     }
 
     fn test(&self, swarm: &mut dyn Swarm, duration: Duration) -> Result<()> {
