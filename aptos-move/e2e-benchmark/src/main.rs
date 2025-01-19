@@ -9,7 +9,7 @@ use aptos_transaction_generator_lib::{
     entry_point_trait::{AutomaticArgs, EntryPointTrait, MultiSigConfig},
     publishing::publish_util::{Package, PackageHandler},
 };
-use aptos_transaction_workloads_lib::{EntryPoints, LoopType};
+use aptos_transaction_workloads_lib::{EntryPoints, LoopType, MapType};
 use aptos_types::{account_address::AccountAddress, transaction::TransactionPayload};
 use rand::{rngs::StdRng, SeedableRng};
 use serde_json::json;
@@ -101,9 +101,9 @@ fn get_parsed_calibration_values() -> HashMap<String, CalibrationInfo> {
             let parts = line.split('\t').collect::<Vec<_>>();
             (parts[0].to_string(), CalibrationInfo {
                 // count: parts[1].parse().unwrap(),
-                expected_time_micros: parts[parts.len() - 1].parse().unwrap(),
-                min_ratio: parts[2].parse().unwrap(),
-                max_ratio: parts[3].parse().unwrap(),
+                expected_time_micros: parts[parts.len() - 1].parse().expect(line),
+                min_ratio: parts[2].parse().expect(line),
+                max_ratio: parts[3].parse().expect(line),
             })
         })
         .collect()
@@ -237,6 +237,21 @@ fn main() {
             index: 50,
             move_len: 10,
             repeats: 1000,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 100,
+            map_type: MapType::OrderedMap,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 100,
+            map_type: MapType::SimpleMap,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 1000,
+            repeats: 100,
+            map_type: MapType::OrderedMap,
         },
     ];
 

@@ -44,6 +44,16 @@ pub enum LoopType {
     BcsToBytes { len: u64 },
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum MapType {
+    SimpleMap,
+    OrderedMap,
+    BigOrderedMap {
+        inner_max_degree: u16,
+        leaf_max_degree: u16,
+    },
+}
+
 //
 // List of entry points to expose
 //
@@ -172,6 +182,11 @@ pub enum EntryPoints {
         move_len: u64,
         repeats: u64,
     },
+    MapInsertRemove {
+        len: u64,
+        repeats: u64,
+        map_type: MapType,
+    },
     /// Initialize Token V1 NFT collection
     TokenV1InitializeCollection,
     /// Mint an NFT token. Should be called only after InitializeCollection is called
@@ -217,6 +232,10 @@ pub enum EntryPoints {
     /// there to slow down deserialization & verification, effectively making it more expensive to
     /// load it into code cache.
     SimpleScript,
+    /// Set up an APT transfer permission and transfering APT by using that permissioned signer.
+    APTTransferWithPermissionedSigner,
+    /// Transfer APT using vanilla master signer to compare the performance.
+    APTTransferWithMasterSigner,
 }
 
 impl EntryPointTrait for EntryPoints {
@@ -256,6 +275,7 @@ impl EntryPointTrait for EntryPoints {
             | EntryPoints::VectorTrimAppend { .. }
             | EntryPoints::VectorRemoveInsert { .. }
             | EntryPoints::VectorRangeMove { .. }
+            | EntryPoints::MapInsertRemove { .. }
             | EntryPoints::TokenV1InitializeCollection
             | EntryPoints::TokenV1MintAndStoreNFTParallel
             | EntryPoints::TokenV1MintAndStoreNFTSequential
@@ -268,7 +288,9 @@ impl EntryPointTrait for EntryPoints {
             | EntryPoints::ResourceGroupsSenderWriteTag { .. }
             | EntryPoints::ResourceGroupsSenderMultiChange { .. }
             | EntryPoints::CoinInitAndMint
-            | EntryPoints::FungibleAssetMint => "framework_usecases",
+            | EntryPoints::FungibleAssetMint
+            | EntryPoints::APTTransferWithPermissionedSigner
+            | EntryPoints::APTTransferWithMasterSigner => "framework_usecases",
             EntryPoints::TokenV2AmbassadorMint { .. } | EntryPoints::TokenV2AmbassadorBurn => {
                 "ambassador_token"
             },
@@ -318,6 +340,7 @@ impl EntryPointTrait for EntryPoints {
             EntryPoints::VectorTrimAppend { .. }
             | EntryPoints::VectorRemoveInsert { .. }
             | EntryPoints::VectorRangeMove { .. } => "vector_example",
+            EntryPoints::MapInsertRemove { .. } => "maps_example",
             EntryPoints::TokenV1InitializeCollection
             | EntryPoints::TokenV1MintAndStoreNFTParallel
             | EntryPoints::TokenV1MintAndStoreNFTSequential
@@ -346,6 +369,8 @@ impl EntryPointTrait for EntryPoints {
             EntryPoints::IncGlobalMilestoneAggV2 { .. }
             | EntryPoints::CreateGlobalMilestoneAggV2 { .. } => "counter_with_milestone",
             EntryPoints::DeserializeU256 => "bcs_stream",
+            EntryPoints::APTTransferWithPermissionedSigner
+            | EntryPoints::APTTransferWithMasterSigner => "permissioned_transfer",
         }
     }
 
@@ -554,6 +579,27 @@ impl EntryPointTrait for EntryPoints {
                     bcs::to_bytes(repeats).unwrap(),
                 ],
             ),
+            EntryPoints::MapInsertRemove {
+                len,
+                repeats,
+                map_type,
+            } => {
+                let mut args = vec![bcs::to_bytes(len).unwrap(), bcs::to_bytes(repeats).unwrap()];
+                let func = match map_type {
+                    MapType::SimpleMap => ident_str!("test_add_remove_simple_map").to_owned(),
+                    MapType::OrderedMap => ident_str!("test_add_remove_ordered_map").to_owned(),
+                    MapType::BigOrderedMap {
+                        inner_max_degree,
+                        leaf_max_degree,
+                    } => {
+                        args.push(bcs::to_bytes(inner_max_degree).unwrap());
+                        args.push(bcs::to_bytes(leaf_max_degree).unwrap());
+                        ident_str!("test_add_remove_big_ordered_map").to_owned()
+                    },
+                };
+
+                get_payload(module_id, func, args)
+            },
             EntryPoints::TokenV1InitializeCollection => get_payload_void(
                 module_id,
                 ident_str!("token_v1_initialize_collection").to_owned(),
@@ -743,6 +789,20 @@ impl EntryPointTrait for EntryPoints {
                     ],
                 )
             },
+            EntryPoints::APTTransferWithPermissionedSigner => get_payload(
+                module_id,
+                ident_str!("transfer_permissioned").to_owned(),
+                vec![
+                    bcs::to_bytes(&other.expect("Must provide other")).unwrap(),
+                    bcs::to_bytes(&1u64).unwrap(),
+                ],
+            ),
+            EntryPoints::APTTransferWithMasterSigner => {
+                get_payload(module_id, ident_str!("transfer").to_owned(), vec![
+                    bcs::to_bytes(&other.expect("Must provide other")).unwrap(),
+                    bcs::to_bytes(&1u64).unwrap(),
+                ])
+            },
         }
     }
 
@@ -830,6 +890,7 @@ impl EntryPointTrait for EntryPoints {
             EntryPoints::VectorTrimAppend { .. }
             | EntryPoints::VectorRemoveInsert { .. }
             | EntryPoints::VectorRangeMove { .. } => AutomaticArgs::None,
+            EntryPoints::MapInsertRemove { .. } => AutomaticArgs::Signer,
             EntryPoints::TokenV1InitializeCollection
             | EntryPoints::TokenV1MintAndStoreNFTParallel
             | EntryPoints::TokenV1MintAndStoreNFTSequential
@@ -860,6 +921,8 @@ impl EntryPointTrait for EntryPoints {
             EntryPoints::DeserializeU256 => AutomaticArgs::None,
             EntryPoints::IncGlobalMilestoneAggV2 { .. } => AutomaticArgs::None,
             EntryPoints::CreateGlobalMilestoneAggV2 { .. } => AutomaticArgs::Signer,
+            EntryPoints::APTTransferWithPermissionedSigner
+            | EntryPoints::APTTransferWithMasterSigner => AutomaticArgs::Signer,
         }
     }
 }
